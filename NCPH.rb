@@ -95,7 +95,7 @@ gwcand = arpcount.sort { |a,b| b[1] <=> a[1] }
 # In order from "most arp-ed for" to "least arp-ed for" try to find the default gateway
 gwcand.each { |a|
 	print "Trying #{a[0]}|#{arptable[a[0]]} as a potential gateway....\n"
-	if(!arptable.has_key(a[0]))
+	if(!arptable.has_key?(a[0]))
 	   print "Not in database - ARPing for #{a[0]}\n"
 	   haddr = PacketFu::Utils.arp(a[0])
 	   if haddr == nil
