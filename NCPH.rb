@@ -5,6 +5,7 @@ require 'packetfu'
 require 'ipaddr'
 require 'SubnetBlob'
 require 'TestArp'
+require 'TestPing'
 
 # Define our interface
 
@@ -57,11 +58,32 @@ else
 	print "IP #{newaddr} unused!\n"
 end
 
-# Take that address
+# Take that address and/or determine what address we're going to use.
+# For now let's ask if we want to assign otherwise use our own address.
+case RUBY_PLATFORM
+when /freebsd/i
+	ifdata = BSDifconfig('re0')
+else
+	ifdata = PacketFu::Util.ifconfig('re0')
+end
 #
 # Check to see what I've seen ARP-ed for the most
-#
+gwcand = arpcount.sort { |a,b| b[1] <=> a[1] }
+gwcand.each { |a|
+	a.each { |b| print b, "\n" }
+}
+
+print "IFDATA:\n"
+ifdata.each_pair { |a,b|
+	print "#{a} \t-\t#{b}\n"
+}
 # In order from "most arp-ed for" to "least arp-ed for" try to find the default gateway
+result = checkPing(:iface => ifdata[:iface], :src_ip => ifdata[:ip_saddr], :src_mac => ifdata[:eth_saddr], :dst_ip => '4.2.2.2', :gw_mac => '00:1d:b5:70:19:af')
+if result == true
+	print "We did it!\n"
+else
+	print "Nope!\n"
+end
 #
 # Just spit it all out for now so we can see what's up
 arpcount.each_pair { |key,value|

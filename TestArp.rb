@@ -13,7 +13,7 @@ def BSDifconfig(iface='eth0')
 		raise ArgumentError, "Cannot ifconfig #{iface}"
 	end
 	real_iface = ifconfig_data.first
-	ret[:iface] = real_iface.split.first.downcase
+	ret[:iface] = real_iface.split(":").first.downcase
 	ifconfig_data.each do |s|
 		case s
 		when /ether[\s]*([0-9a-fA-F:]{17})/
