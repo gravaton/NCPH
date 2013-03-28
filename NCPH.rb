@@ -95,13 +95,21 @@ gwcand = arpcount.sort { |a,b| b[1] <=> a[1] }
 # In order from "most arp-ed for" to "least arp-ed for" try to find the default gateway
 gwcand.each { |a|
 	print "Trying #{a[0]}|#{arptable[a[0]]} as a potential gateway....\n"
+	if(!arptable.has_key(a[0])
+	   print "Not in database - ARPing for #{a[0]}\n"
+	   haddr = PacketFu::Utils.arp(a[0])
+	   if haddr == nil
+		   print "Failed.\n"
+		   next
+	   end
+	   arptable[a[0]] = haddr
+	end
 	result = checkPing(:iface => ifdata[:iface], :src_ip => ifdata[:ip_saddr], :src_mac => ifdata[:eth_saddr], :dst_ip => '4.2.2.2', :gw_mac => arptable[a[0]])
 	if result == true
 		print "Success!\n"
 		# Set the default gateway
 		break
-	else
-		print "Failed.\n"
 	end
+	print "Failed.\n"
 }
 
