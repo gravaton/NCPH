@@ -14,7 +14,7 @@ def BSDifconfig(iface='eth0')
 		raise ArgumentError, "Cannot ifconfig #{iface}"
 	end
 	real_iface = ifconfig_data.first
-	ret[:iface] = real_iface.split(":").first.downcase
+	ret[:iface] = real_iface.split.first.downcase.chomp(":")
 	ifconfig_data.each do |s|
 		case s
 		when /ether[\s]*([0-9a-fA-F:]{17})/
@@ -72,4 +72,7 @@ def checkIP(args={})
 
 end
 
+#BSDifconfig("re0").each_pair { |a,b|
+#	print "#{a} \t-\t #{b}\n"
+#}
 #print checkIP(:iface => "re0", :target => "192.168.1.10") ? "IP Found!\n" : "IP unused!\n"
