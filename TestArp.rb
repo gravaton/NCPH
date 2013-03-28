@@ -3,6 +3,7 @@
 require 'rubygems'
 require 'packetfu'
 
+# A FreeBSD ifconfig parser, hopefully to be incorporated into PacketFu
 def BSDifconfig(iface='eth0')
 	ret = {}
 	iface = iface.to_s.scan(/[0-9A-Za-z]/).join # Sanitizing input, no spaces, semicolons, etc.
@@ -38,8 +39,12 @@ def checkIP(args={})
 
 	# Get our interface information
 	# We have to use our own function for this here because packetfu doesn't support FreeBSD
-	#ifconfig = PacketFu::Utils.ifconfig("re0")
-	ifconfig = BSDifconfig(args[:iface])
+	case RUBY_PLATFORM
+	when /freebsd/i
+		ifconfig = BSDifconfig(args[:iface])
+	else
+		ifconfig = PacketFu::Utils.ifconfig("re0")
+	end
 
 	arp = PacketFu::ARPPacket.new(:flavor => "Linux")
 	arp.arp_opcode = 1
