@@ -45,6 +45,15 @@ while(count < 15)
 	end
 end
 
+# Just spit it all out for now so we can see what's up
+print "ARP DATABASES\n=============\n"
+arpcount.each_pair { |key,value|
+	print key, "\t", value, "\n"
+}
+arptable.each_pair { |key,value|
+	print key, "\t", value, "\n"
+}
+
 # Build a SubnetBlob
 
 blob = SubnetBlob.new
@@ -96,10 +105,3 @@ gwcand.each { |a|
 	end
 }
 
-# Just spit it all out for now so we can see what's up
-arpcount.each_pair { |key,value|
-	print key, "\t", value, "\n"
-}
-arptable.each_pair { |key,value|
-	print key, "\t", value, "\n"
-}
