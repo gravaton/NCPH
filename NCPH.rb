@@ -62,9 +62,9 @@ end
 # For now let's ask if we want to assign otherwise use our own address.
 case RUBY_PLATFORM
 when /freebsd/i
-	ifdata = BSDifconfig('re0')
+	ifdata = BSDifconfig(tgtif)
 else
-	ifdata = PacketFu::Util.ifconfig('re0')
+	ifdata = PacketFu::Util.ifconfig(tgtif)
 end
 #
 # Check to see what I've seen ARP-ed for the most
