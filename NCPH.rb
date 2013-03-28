@@ -64,7 +64,7 @@ case RUBY_PLATFORM
 when /freebsd/i
 	ifdata = BSDifconfig(tgtif)
 else
-	ifdata = PacketFu::Util.ifconfig(tgtif)
+	ifdata = PacketFu::Utils.ifconfig(tgtif)
 end
 #
 # Check to see what I've seen ARP-ed for the most
