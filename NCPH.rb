@@ -7,9 +7,13 @@ require 'SubnetBlob'
 require 'TestArp'
 require 'TestPing'
 
-# Define our interface
-
-tgtif = 're0'
+# Get our interface
+if ARGV[0] == nil
+	print "Please specify an interface\n"
+	exit
+else
+	tgtif = ARGV[0]
+end
 
 # Open up a non-promiscuous capture on our external interface looking for APRs
 # TODO: Make this more useful as to picking an interface, it's hard-coded now and that's silly
