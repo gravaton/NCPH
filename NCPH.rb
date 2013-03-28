@@ -29,10 +29,14 @@ count = 0
 while(count < 15)
 	cap.stream.each do |rawpkt|
 		pkt = PacketFu::Packet.parse(rawpkt)
+		# Drop the packet if it comes from 0.0.0.0
+		next if pkt.arp_saddr_ip == '0.0.0.0'
 		# Don't store the MAC of a "Seeking?" target because it's always 00:00:00:00:00:00
 		arptable[pkt.arp_daddr_ip] = pkt.arp_daddr_mac unless pkt.arp_opcode == 1
+		print "Storing #{pkt.arp_daddr_ip}|#{pkt.arp_daddr_mac}\n" unless pkt.arp_opcode == 1
 		# Always store the MAC of the seeker
 		arptable[pkt.arp_saddr_ip] = pkt.arp_saddr_mac
+		print "Storing #{pkt.arp_saddr_ip}|#{pkt.arp_saddr_mac}\n"
 		# Count how many times we've seen this host searched for - default gateway should be the most sought after
 		arpcount[pkt.arp_daddr_ip] += 1
 		count = count + 1
