@@ -12,11 +12,16 @@ def checkPing(arg={})
 	ping.recalc
 
 	cap = PacketFu::Capture.new(:iface => arg[:iface], :promisc => false)
-	cap.start(:filter => 'icmp')
-	ping.to_w(arg[:iface])
+	fstring = "icmp[icmptype] = icmp-echoreply and src host " + arg[:dst_ip]
+	cap.start(:filter => fstring)
+	3.times do ping.to_w(arg[:iface]) end
 	sleep 5
 	cap.save
 	cap.array.each { |item|
-		print PacketFu::Packet.parse(item).peek, "\n"
+		pak = PacketFu::Packet.parse(item)
+		return true if pak.payload =~ /This is a ping and a finer ping there has never been 1234567/
 	}
+	return false
 end
+
+#checkPing(:iface => 're1', :src_ip => '173.56.234.57', :src_mac => '00:01:80:7b:d5:53', :dst_ip => '4.2.2.2', :gw_mac => '00:1d:b5:70:19:af')
