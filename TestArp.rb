@@ -43,7 +43,7 @@ def checkIP(args={})
 	when /freebsd/i
 		ifconfig = BSDifconfig(args[:iface])
 	else
-		ifconfig = PacketFu::Utils.ifconfig("re0")
+		ifconfig = PacketFu::Utils.ifconfig(args[:iface])
 	end
 
 	arp = PacketFu::ARPPacket.new(:flavor => "Linux")
