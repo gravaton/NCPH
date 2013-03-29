@@ -1,8 +1,8 @@
 #!/usr/local/bin/ruby
 
+require 'rubygems'
 require 'optparse'
 require 'logger'
-require 'rubygems'
 require 'packetfu'
 require 'ipaddr'
 require 'SubnetBlob'
@@ -14,6 +14,7 @@ require 'TestPing'
 options = {}
 optparse = OptionParser.new { |opts|
 	options[:debug] = false
+	options[:arpcount] = 15
 	opts.banner = "Usage: NCPH.rb [options] [interface]"
 	opts.on( '-d', '--debug', 'Output debug information') { options[:debug] = true }
 	opts.on( '-v', '--version', 'Show version') {
@@ -56,7 +57,7 @@ arpcount = Hash.new(0)
 
 # We're gonna get the first 15 ARPs we can find
 count = 0
-while(count < 15)
+while(count < options[:arpcount])
 	cap.stream.each do |rawpkt|
 		pkt = PacketFu::Packet.parse(rawpkt)
 		# Drop the packet if it comes from 0.0.0.0
@@ -127,7 +128,7 @@ gwcand.each { |a|
 	log.info("Trying #{a[0]}|#{arptable[a[0]]} as a potential gateway....")
 	if(!arptable.has_key?(a[0]))
 	   log.info("Not in database - ARPing for #{a[0]}")
-	   haddr = PacketFu::Utils.arp(a[0])
+	   haddr = PacketFu::Utils.arp(a[0], iface => ifdata[:iface])
 	   if haddr == nil
 		   log.info("Failed.")
 		   next
