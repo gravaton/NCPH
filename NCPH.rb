@@ -1,5 +1,6 @@
 #!/usr/local/bin/ruby
 
+require 'optparse'
 require 'logger'
 require 'rubygems'
 require 'packetfu'
@@ -8,23 +9,46 @@ require 'SubnetBlob'
 require 'TestArp'
 require 'TestPing'
 
-# Setup our output logging
+# Parse the command line options
 
-log = Logger.new(STDOUT)
-log.level = Logger::DEBUG
-
+options = {}
+optparse = OptionParser.new { |opts|
+	options[:debug] = false
+	opts.banner = "Usage: NCPH.rb [options] [interface]"
+	opts.on( '-d', '--debug', 'Output debug information') { options[:debug] = true }
+	opts.on( '-v', '--version', 'Show version') {
+		print "NCPH - No Connection Parameters Here\nVersion 0.1\n"
+		exit
+	}
+	opts.on( '-h', '--help', 'Display this screen') {
+		puts opts
+		exit
+	}
+}
+optparse.parse!
 # Get our interface
 if ARGV[0] == nil
 	log.fatal("Please specify an interface!")
 	exit
 else
-	tgtif = ARGV[0]
+	options[:tgtif] = ARGV[0]
 end
 
+# Setup our output logging
+
+log = Logger.new(STDOUT)
+log.level = options[:debug] ? Logger::DEBUG : Logger::INFO
+
 # Open up a non-promiscuous capture on our external interface looking for APRs
-# TODO: Make this more useful as to picking an interface, it's hard-coded now and that's silly
-cap = PacketFu::Capture.new(:iface => tgtif)
-cap.capture(:filter => 'arp')
+begin
+	cap = PacketFu::Capture.new(:iface => options[:tgtif])
+	cap.capture(:filter => 'arp')
+rescue RuntimeError => e
+	log.fatal("Unable to start packet capture!  Are you sure you have permissions?")
+	log.debug(e.message)
+	log.debug(e.backtrace)
+	exit
+end
 
 # Set up our tables for the ARPs we see and how often we see them
 arptable = Hash.new
@@ -75,7 +99,7 @@ log.info("I'm gonna try #{newaddr}")
 
 # See if that address is free
 
-if(checkIP(:iface => tgtif, :target => newaddr.to_s))
+if(checkIP(:iface => options[:tgtif], :target => newaddr.to_s))
 	log.info("IP #{newaddr} used!")
 else
 	log.info("IP #{newaddr} unused!")
@@ -85,9 +109,9 @@ end
 # For now let's ask if we want to assign otherwise use our own address.
 case RUBY_PLATFORM
 when /freebsd/i
-	ifdata = BSDifconfig(tgtif)
+	ifdata = BSDifconfig(options[:tgtif])
 else
-	ifdata = PacketFu::Utils.ifconfig(tgtif)
+	ifdata = PacketFu::Utils.ifconfig(options[:tgtif])
 end
 log.debug("IFDATA:")
 ifdata.each_pair { |a,b|
