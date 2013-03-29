@@ -27,6 +27,11 @@ optparse = OptionParser.new { |opts|
 	}
 }
 optparse.parse!
+
+# Setup our output logging
+log = Logger.new(STDOUT)
+log.level = options[:debug] ? Logger::DEBUG : Logger::INFO
+
 # Get our interface
 if ARGV[0] == nil
 	log.fatal("Please specify an interface!")
@@ -35,10 +40,6 @@ else
 	options[:tgtif] = ARGV[0]
 end
 
-# Setup our output logging
-
-log = Logger.new(STDOUT)
-log.level = options[:debug] ? Logger::DEBUG : Logger::INFO
 
 # Open up a non-promiscuous capture on our external interface looking for APRs
 begin
@@ -61,17 +62,19 @@ while(count < options[:arpcount])
 	cap.stream.each do |rawpkt|
 		pkt = PacketFu::Packet.parse(rawpkt)
 		# Drop the packet if it comes from 0.0.0.0
-		next if pkt.arp_saddr_ip == '0.0.0.0'
 		# Don't store the MAC of a "Seeking?" target because it's always 00:00:00:00:00:00
-		arptable[pkt.arp_daddr_ip] = pkt.arp_daddr_mac unless pkt.arp_opcode == 1
-		log.debug("Storing #{pkt.arp_daddr_ip}|#{pkt.arp_daddr_mac}") unless pkt.arp_opcode == 1
-		# Always store the MAC of the seeker
-		arptable[pkt.arp_saddr_ip] = pkt.arp_saddr_mac
-		log.debug("Storing #{pkt.arp_saddr_ip}|#{pkt.arp_saddr_mac}")
-		# Count how many times we've seen this host searched for - default gateway should be the most sought after
-		arpcount[pkt.arp_daddr_ip] += 1
-		count = count + 1
-		log.debug("Packet number #{count} captured. Opcode: #{pkt.arp_opcode}")
+		if(pkt.arp_daddr_ip != '0.0.0.0' and pkt.arp_opcode == 2)
+			arptable[pkt.arp_daddr_ip] = pkt.arp_daddr_mac unless pkt.arp_opcode == 1
+			log.debug("Storing #{pkt.arp_daddr_ip}|#{pkt.arp_daddr_mac}") unless pkt.arp_opcode == 1
+			# Count how many times we've seen this host searched for - default gateway should be the most sought after
+			arpcount[pkt.arp_daddr_ip] += 1
+		end
+		if(pkt.arp_saddr_ip != '0.0.0.0')
+			arptable[pkt.arp_saddr_ip] = pkt.arp_saddr_mac
+			log.debug("Storing #{pkt.arp_saddr_ip}|#{pkt.arp_saddr_mac}")
+			count = count + 1
+			log.debug("Packet number #{count} captured. Opcode: #{pkt.arp_opcode}")
+		end
 		break if count > 15
 	end
 end
