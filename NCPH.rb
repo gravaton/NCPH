@@ -2,6 +2,7 @@
 
 require 'rubygems'
 require 'optparse'
+require 'ostruct'
 require 'logger'
 require 'packetfu'
 require 'ipaddr'
@@ -11,39 +12,47 @@ require 'TestPing'
 
 # Parse the command line options
 
-options = {}
-optparse = OptionParser.new { |opts|
-	options[:debug] = false
-	options[:arpcount] = 15
-	opts.banner = "Usage: NCPH.rb [options] [interface]"
-	opts.on( '-d', '--debug', 'Output debug information') { options[:debug] = true }
-	opts.on( '-v', '--version', 'Show version') {
-		print "NCPH - No Connection Parameters Here\nVersion 0.1\n"
-		exit
+options = OpenStruct.new
+optparse = OptionParser.new("Usage: NCPH.rb [options] [interface") { |opts|
+	options.debug = false
+	options.arpcount = 15
+	opts.separator ""
+	opts.on( "-aCOUNT", "--arpcount COUNT", Integer, "Number of ARP packets to capture before processing") { |count|
+		options.arpcount = count
 	}
-	opts.on( '-h', '--help', 'Display this screen') {
+	opts.on( "-d", "--debug", "Output debug information") { options.debug = true }
+	opts.separator ""
+	opts.on_tail( "-h", "--help", "Display this screen") {
 		puts opts
 		exit
 	}
+	opts.on_tail( "-v", "--version", "Show version") {
+		print "NCPH - No Connection Parameters Here\nVersion 0.1\n"
+		exit
+	}
 }
-optparse.parse!
+optparse.parse!(ARGV)
 
 # Setup our output logging
 log = Logger.new(STDOUT)
-log.level = options[:debug] ? Logger::DEBUG : Logger::INFO
+log.formatter = proc{ |level, datetime, progname, msg|
+	return level.to_s + " -- " + msg.to_s + "\n"
+}
+log.level = options.debug ? Logger::DEBUG : Logger::INFO
 
 # Get our interface
 if ARGV[0] == nil
 	log.fatal("Please specify an interface!")
 	exit
 else
-	options[:tgtif] = ARGV[0]
+	options.tgtif = ARGV[0]
 end
 
 
 # Open up a non-promiscuous capture on our external interface looking for APRs
 begin
-	cap = PacketFu::Capture.new(:iface => options[:tgtif])
+	log.info("Beginning packet capture on #{options.tgtif}")
+	cap = PacketFu::Capture.new(:iface => options.tgtif)
 	cap.capture(:filter => 'arp')
 rescue RuntimeError => e
 	log.fatal("Unable to start packet capture!  Are you sure you have permissions?")
@@ -57,7 +66,7 @@ arptable = Hash.new { |h,k| h[k] = {:sum => 0} }
 
 # We're gonna get the first 15 ARPs we can find
 count = 0
-while(count < options[:arpcount])
+while(count < options.arpcount)
 	cap.stream.each do |rawpkt|
 		pkt = PacketFu::Packet.parse(rawpkt)
 		# Drop the packet if it comes from 0.0.0.0
@@ -79,12 +88,13 @@ while(count < options[:arpcount])
 end
 
 # Just spit it all out for now so we can see what's up
-log.debug("ARP DATABASES\n=============")
+log.debug("ARP DATABASE")
 arptable.each_pair { |key,value|
 	log.debug("#{key}\t#{value[0]}\t#{value[1]}")
 }
 
 # Build a SubnetBlob out of the IPs we've found to actually exist
+log.debug("Building subnet blob...")
 blob = SubnetBlob.new
 arptable.each_key { |item|
 	if arptable[item].has_key?(:mac)
@@ -94,30 +104,30 @@ arptable.each_key { |item|
 		log.debug("Skipping #{item}")
 	end
 }
-log.info("I think this subnet is #{blob}")
+log.info("Local subnet appears to be #{blob}")
 
 # Pick in IP address for us
-
-newaddr = IPAddr.new(blob.net + rand(blob.mask), Socket::AF_INET)
-log.info("I'm gonna try #{newaddr}")
-
-# See if that address is free
-
-if(checkIP(:iface => options[:tgtif], :target => newaddr.to_s))
-	log.info("IP #{newaddr} used!")
-else
-	log.info("IP #{newaddr} unused!")
+newaddr = nil
+while newaddr == nil
+	newaddr = IPAddr.new(blob.net + rand(blob.mask), Socket::AF_INET)
+	log.info("Testing #{newaddr}")
+	if(checkIP(:iface => options.tgtif, :target => newaddr.to_s))
+		log.info("IP #{newaddr} is in use!  Trying again...")
+		newaddr = nil
+	else
+		log.info("IP #{newaddr} unused!")
+	end
 end
 
 # Take that address and/or determine what address we're going to use.
 # For now let's ask if we want to assign otherwise use our own address.
 case RUBY_PLATFORM
 when /freebsd/i
-	ifdata = BSDifconfig(options[:tgtif])
+	ifdata = BSDifconfig(options.tgtif)
 else
-	ifdata = PacketFu::Utils.ifconfig(options[:tgtif])
+	ifdata = PacketFu::Utils.ifconfig(options.tgtif)
 end
-log.debug("IFDATA:")
+log.debug("Interface Data:")
 ifdata.each_pair { |a,b|
 	log.debug("#{a} \t-\t#{b}")
 }
