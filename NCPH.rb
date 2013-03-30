@@ -88,10 +88,9 @@ arptable.each_pair { |key,value|
 	log.debug("#{key}\t#{value}")
 }
 
-# Build a SubnetBlob
-
+# Build a SubnetBlob out of the IPs we've found to actually exist
 blob = SubnetBlob.new
-arpcount.each_key { |item|
+arptable.each_key { |item|
 	blob.addIP(item)
 }
 log.info("I think this subnet is #{blob}")
