@@ -53,8 +53,7 @@ rescue RuntimeError => e
 end
 
 # Set up our tables for the ARPs we see and how often we see them
-arptable = Hash.new
-arpcount = Hash.new(0)
+arptable = Hash.new { |h,k| h[k] = {:sum => 0} }
 
 # We're gonna get the first 15 ARPs we can find
 count = 0
@@ -64,13 +63,13 @@ while(count < options[:arpcount])
 		# Drop the packet if it comes from 0.0.0.0
 		# Don't store the MAC of a "Seeking?" target because it's always 00:00:00:00:00:00
 		if(pkt.arp_daddr_ip != '0.0.0.0' and pkt.arp_opcode == 2)
-			arptable[pkt.arp_daddr_ip] = pkt.arp_daddr_mac unless pkt.arp_opcode == 1
+			arptable[pkt.arp_daddr_ip][:mac] = pkt.arp_daddr_mac unless pkt.arp_opcode == 1
 			log.debug("Storing #{pkt.arp_daddr_ip}|#{pkt.arp_daddr_mac}") unless pkt.arp_opcode == 1
 			# Count how many times we've seen this host searched for - default gateway should be the most sought after
-			arpcount[pkt.arp_daddr_ip] += 1
+			arptable[pkt.arp_daddr_ip][:sum] += 1
 		end
 		if(pkt.arp_saddr_ip != '0.0.0.0')
-			arptable[pkt.arp_saddr_ip] = pkt.arp_saddr_mac
+			arptable[pkt.arp_saddr_ip][:mac] = pkt.arp_saddr_mac
 			log.debug("Storing #{pkt.arp_saddr_ip}|#{pkt.arp_saddr_mac}")
 			count = count + 1
 			log.debug("Packet number #{count} captured. Opcode: #{pkt.arp_opcode}")
@@ -81,17 +80,19 @@ end
 
 # Just spit it all out for now so we can see what's up
 log.debug("ARP DATABASES\n=============")
-arpcount.each_pair { |key,value|
-	log.debug("#{key}\t#{value}")
-}
 arptable.each_pair { |key,value|
-	log.debug("#{key}\t#{value}")
+	log.debug("#{key}\t#{value[0]}\t#{value[1]}")
 }
 
 # Build a SubnetBlob out of the IPs we've found to actually exist
 blob = SubnetBlob.new
 arptable.each_key { |item|
-	blob.addIP(item)
+	if arptable[item].has_key?(:mac)
+		blob.addIP(item)
+		log.debug("Blobbing #{item}")
+	else
+		log.debug("Skipping #{item}")
+	end
 }
 log.info("I think this subnet is #{blob}")
 
@@ -123,21 +124,21 @@ ifdata.each_pair { |a,b|
 
 # Check to see what I've seen ARP-ed for the most
 
-gwcand = arpcount.sort { |a,b| b[1] <=> a[1] }
+gwcand = arptable.sort { |a,b| b[1][:sum] <=> a[1][:sum] }
 
 # In order from "most arp-ed for" to "least arp-ed for" try to find the default gateway
 gwcand.each { |a|
-	log.info("Trying #{a[0]}|#{arptable[a[0]]} as a potential gateway....")
-	if(!arptable.has_key?(a[0]))
+	log.info("Trying #{a[0]}|#{a[1][:mac]} as a potential gateway....")
+	if(!a[1].has_key?(:mac))
 	   log.info("Not in database - ARPing for #{a[0]}")
 	   haddr = PacketFu::Utils.arp(a[0], iface => ifdata[:iface])
 	   if haddr == nil
 		   log.info("Failed.")
 		   next
 	   end
-	   arptable[a[0]] = haddr
+	   arptable[a[0]][:mac] = haddr
 	end
-	result = checkPing(:iface => ifdata[:iface], :src_ip => ifdata[:ip_saddr], :src_mac => ifdata[:eth_saddr], :dst_ip => '4.2.2.2', :gw_mac => arptable[a[0]])
+	result = checkPing(:iface => ifdata[:iface], :src_ip => ifdata[:ip_saddr], :src_mac => ifdata[:eth_saddr], :dst_ip => '4.2.2.2', :gw_mac => arptable[a[0]][:mac])
 	if result == true
 		log.info("Success!")
 		# Set the default gateway
