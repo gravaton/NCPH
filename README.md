@@ -5,8 +5,8 @@ NCPH
 
 General operation should be as follows (although all of these steps are not fully implemented yet):
 
-- Listen to ARP traffic on the connceted interface to determine which hosts exist on the network
-- Use the ARP-ed addresses to build a probable network address and netmask for the connected network
-- Pick a random, not-yet-seen address from that range and check for IP conflict in a nonintrusive manner (hopefully following RFC5227)
-- Assign that IP address to the connected interface
-- Presuming the most-ARPed-for address to be the default gateway, test connectivity through that
+- Listen to ARP traffic on the connceted interface to determine which hosts exist on the network (Working!)
+- Use the ARP-ed addresses to build a probable network address and netmask for the connected network (Working!)
+- Pick a random, not-yet-seen address from that range and check for IP conflict in a nonintrusive manner (Working! Hopefully following RFC5227)
+- Assign that IP address to the connected interface (Not yet implemented)
+- Presuming the most-ARPed-for address to be the default gateway, test connectivity through that (Working!)
