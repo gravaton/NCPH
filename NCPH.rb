@@ -11,7 +11,6 @@ require 'TestArp'
 require 'TestPing'
 
 # Parse the command line options
-
 options = OpenStruct.new
 optparse = OptionParser.new("Usage: NCPH.rb [options] [interface") { |opts|
 	options.debug = false
@@ -90,7 +89,7 @@ end
 # Just spit it all out for now so we can see what's up
 log.debug("ARP DATABASE")
 arptable.each_pair { |key,value|
-	log.debug("#{key}\t#{value[0]}\t#{value[1]}")
+	log.debug("#{key}\t#{value[:mac]}\t#{value[:sum]}")
 }
 
 # Build a SubnetBlob out of the IPs we've found to actually exist
