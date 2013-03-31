@@ -3,10 +3,14 @@
 require 'ipaddr'
 
 class SubnetBlob
-	attr_reader :net, :mask
-	def initialize()
+	attr_reader :net, :mask, :contents
+	def initialize(adrlist = [])
 		@mask = 0
 		@net = nil
+		@contents = []
+		adrlist.each { |item|
+			self.addIP(item)
+		}
 	end
 	def addIP(item)
 		adr = IPAddr.new(item).to_i
@@ -15,6 +19,7 @@ class SubnetBlob
 		@mask |= (@net ^ adr)
 		@net &= adr
 		#@carried = @carried.mask((32 - @mask.to_s(2).length))
+		@contents << item
 	end
 	def addr
 		adr = IPAddr.new(self.to_s)

@@ -94,15 +94,8 @@ arptable.each_pair { |key,value|
 
 # Build a SubnetBlob out of the IPs we've found to actually exist
 log.debug("Building subnet blob...")
-blob = SubnetBlob.new
-arptable.each_key { |item|
-	if arptable[item].has_key?(:mac)
-		blob.addIP(item)
-		log.debug("Blobbing #{item}")
-	else
-		log.debug("Skipping #{item}")
-	end
-}
+blob = SubnetBlob.new((arptable.select { |k,v| v.has_key?(:mac) }).map { |i| i[0] })
+log.debug("Blob contains #{blob.contents.join(',')}")
 log.info("Local subnet appears to be #{blob}")
 
 # Pick in IP address for us
