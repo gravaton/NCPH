@@ -16,22 +16,101 @@ $log.formatter = proc{ |level, datetime, progname, msg|
 	return level.to_s + " -- " + msg.to_s + "\n"
 }
 class NCHPInterface
-	attr_reader :name, :cap, :arptable, :blob
+	attr_reader :name, :cap, :arptable, :blob, :arpcount
 	def initialize(args = {})
 		@name = args[:iface]
+		@arpcount = 0
 		@arptable = Hash.new { |h,k| h[k] = {:sum => 0} }
 		@blob = SubnetBlob.new
 		@log = args[:log]
-		begin
-			@log.info("Beginning packet capture on #{@name}")
-			@cap = PacketFu::Capture.new(:iface => @name)
-			@cap.capture(:filter => 'arp')
-		rescue RuntimeError => e
-			@log.fatal("Unable to start packet capture!  Are you sure you have permissions?")
-			@log.debug(e.message)
-			@log.debug(e.backtrace)
-			exit
+		@cap = PacketFu::Capture.new(:iface => @name)
+		@cap_thread = Thread.new {
+			begin
+				@log.info("Beginning packet capture on #{@name}")
+				@cap.capture(:filter => 'arp')
+			rescue RuntimeError => e
+				@log.fatal("Unable to start packet capture!  Are you sure you have permissions?")
+				raise e
+			end
+			@cap.stream.each { |rawpkt|
+				pkt = PacketFu::Packet.parse(rawpkt)
+				# Drop the packet if it comes from 0.0.0.0
+				# Don't store the MAC of a "Seeking?" target because it's always 00:00:00:00:00:00
+				if(pkt.arp_daddr_ip != '0.0.0.0' and pkt.arp_opcode == 2)
+					@arptable[pkt.arp_daddr_ip][:mac] = pkt.arp_daddr_mac
+					@log.debug("Storing #{pkt.arp_daddr_ip}|#{pkt.arp_daddr_mac}")
+					# Count how many times we've seen this host searched for - default gateway should be the most sought after
+					arptable[pkt.arp_daddr_ip][:sum] += 1
+				end
+				if(pkt.arp_saddr_ip != '0.0.0.0')
+					@arptable[pkt.arp_saddr_ip][:mac] = pkt.arp_saddr_mac
+					@log.debug("Storing #{pkt.arp_saddr_ip}|#{pkt.arp_saddr_mac}")
+					@log.debug("Packet number #{count} captured. Opcode: #{pkt.arp_opcode}")
+				end
+				@arpcount = @arpcount + 1
+			}
+		}
+	end
+	def checkIP(args={})
+        	# Get our interface information
+	        # We have to use our own function for this here because packetfu doesn't support FreeBSD
+	        case RUBY_PLATFORM
+	        when /freebsd/i
+	                ifconfig = BSDifconfig(@name)
+	        else
+	                ifconfig = PacketFu::Utils.ifconfig(@name)
+	        end
+	
+	        arp = PacketFu::ARPPacket.new(:flavor => "Linux")
+	        arp.arp_opcode = 1
+	        arp.eth_daddr="ff:ff:ff:ff:ff:ff"
+	        arp.eth_saddr=ifconfig[:eth_saddr]
+	        arp.arp_saddr_ip="0.0.0.0"
+	        arp.arp_saddr_mac=ifconfig[:eth_saddr]
+	        arp.arp_daddr_mac="00:00:00:00:00:00"
+	        arp.arp_daddr_ip=args[:target]
+	        arp.recalc
+	
+	        cap = PacketFu::Capture.new(:iface => @name, :promisc => false)
+	        cap.start(:filter => 'arp')
+	        3.times do arp.to_w(@name) end
+	        sleep 5
+	        cap.save
+	        cap.array.each { |item|
+	                pak = PacketFu::Packet.parse(item)
+	                next unless pak.arp_opcode == 2 # We only care about responses
+	                if pak.arp_saddr_ip == args[:target]
+	                        return true # The IP is in use if we got a reply from that source IP
+	                end
+	        }
+        	return false
+	end
+	def setIP(args={})
+		#This should to the IP setting on the interface fepending on platform
+		case RUBY_PLATFORM
+		when /freebsd/i
+			#We're using FreeBSD
 		end
+	end
+	def checkPing(args={})
+	        ping = PacketFu::ICMPPacket.new(:icmp_type => 8, :icmp_code => 0, :body => "This is a ping and a finer ping there has never been 1234567")
+	        ping.ip_saddr=args[:src_ip]
+	        ping.eth_saddr=args[:src_mac]
+	        ping.ip_daddr=args[:dst_ip]
+	        ping.eth_daddr=args[:gw_mac]
+	        ping.recalc
+
+	        cap = PacketFu::Capture.new(:iface => @name, :promisc => false)
+	        fstring = "icmp[icmptype] = icmp-echoreply and src host " + args[:dst_ip]
+	        cap.start(:filter => fstring)
+	        3.times do ping.to_w(@name) end
+	        sleep 5
+	        cap.save
+	        cap.array.each { |item|
+	                pak = PacketFu::Packet.parse(item)
+	                return true if pak.payload =~ /This is a ping and a finer ping there has never been 1234567/
+	        }
+	        return false
 	end
 end
 # Parse the command line options
@@ -110,7 +189,7 @@ while(count < options.arpcount)
 end
 
 # Just spit it all out for now so we can see what's up
-log.debug("ARP DATABASE")
+$log.debug("ARP DATABASE")
 arptable.each_pair { |key,value|
 	$log.debug("#{key}\t#{value[:mac]}\t#{value[:sum]}")
 }
