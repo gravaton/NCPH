@@ -83,17 +83,14 @@ class NCHPInterface
 			}
 			@log.debug("ARP capture thread shutting down on #{args[:iface]}")
 			# Clean up the capture
+			@cap.clear(:array => true, :stream => true)
 			@arpcount
 		}
 	end
 
 	def checkArpCap
 		begin
-			if @cap_thread.alive?
-				return @arpcount
-			else
-				return @cap_thread.value
-			end
+			return (@cap_thread.alive? ? @arpcount : @cap_thread.value)
 		rescue => e
 			@log.fatal("Serious error in the capture thread")
 			raise e
@@ -120,18 +117,19 @@ class NCHPInterface
 	        arp.arp_daddr_ip=args[:target]
 	        arp.recalc
 	
-	        cap = PacketFu::Capture.new(:iface => @name, :promisc => false)
-	        cap.start(:filter => 'arp')
+	        @cap.capture(:filter => 'arp')
 	        3.times do arp.to_w(@name) end
 	        sleep 5
-	        cap.save
-	        cap.array.each { |item|
+	        @cap.save
+	        @cap.array.each { |item|
 	                pak = PacketFu::Packet.parse(item)
 	                next unless pak.arp_opcode == 2 # We only care about responses
 	                if pak.arp_saddr_ip == args[:target]
+				@cap.clear(:array => true, :stream => true)
 	                        return true # The IP is in use if we got a reply from that source IP
 	                end
 	        }
+		@cap.clear(:array => true, :stream => true)
         	return false
 	end
 	def setIP(args={})
@@ -149,16 +147,19 @@ class NCHPInterface
 	        ping.eth_daddr=args[:gw_mac]
 	        ping.recalc
 
-	        cap = PacketFu::Capture.new(:iface => @name, :promisc => false)
 	        fstring = "icmp[icmptype] = icmp-echoreply and src host " + args[:dst_ip]
-	        cap.start(:filter => fstring)
+	        @cap.capture(:filter => fstring)
 	        3.times do ping.to_w(@name) end
 	        sleep 5
-	        cap.save
-	        cap.array.each { |item|
+	        @cap.save
+	        @cap.array.each { |item|
 	                pak = PacketFu::Packet.parse(item)
-	                return true if pak.payload =~ /This is a ping and a finer ping there has never been 1234567/
+	                if pak.payload =~ /This is a ping and a finer ping there has never been 1234567/
+				@cap.clear(:array => true, :stream => true)
+				return true
+			end
 	        }
+		@cap.clear(:array => true, :stream => true)
 	        return false
 	end
 end
