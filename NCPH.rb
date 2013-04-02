@@ -6,8 +6,34 @@ require 'ostruct'
 require 'logger'
 require 'packetfu'
 require 'ipaddr'
-require 'SubnetBlob'
 
+class SubnetBlob
+        attr_reader :net, :mask, :contents
+        def initialize(adrlist = [])
+                @mask = 0
+                @net = nil
+                @contents = []
+                adrlist.each { |item|
+                        self.addIP(item)
+                }
+        end
+        def addIP(item)
+                adr = IPAddr.new(item).to_i
+                #adr = IPAddr.new(item)
+                @net = adr if @net == nil
+                @mask |= (@net ^ adr)
+                @net &= adr
+                #@carried = @carried.mask((32 - @mask.to_s(2).length))
+                @contents << item
+        end
+        def addr
+                adr = IPAddr.new(self.to_s)
+        end
+        def to_s
+                out = [24, 16, 8, 0].collect {|b| (@net >> b) & 255}.join('.')
+                out = out + "/#{32 - @mask.to_s(2).length}"
+        end
+end
 
 class NCHPInterface
 	attr_reader :name, :cap, :arptable, :blob, :arpcount
