@@ -36,7 +36,7 @@ class SubnetBlob
 end
 
 class NCHPInterface
-	attr_reader :name, :cap, :arptable, :blob, :arpcount
+	attr_reader :name, :cap, :arptable, :blob, :arpcount, :ifcfg
 	def initialize(args = {})
 		@name = args[:iface]
 		@arpcount = 0
@@ -44,7 +44,22 @@ class NCHPInterface
 		@blob = SubnetBlob.new
 		@log = args[:log]
 		@cap = PacketFu::Capture.new(:iface => @name)
+		@ifcfg = self.getIfcfg
 		self.startArpCap(:maxarp => args[:maxarp])
+	end
+
+	def getIfcfg
+		case RUBY_PLATFORM
+		when /freebsd/i
+			ifdata = BSDifconfig(@name)
+		else
+			ifdata = PacketFu::Utils.ifconfig(@name)
+		end
+		@log.debug("Interface Data:")
+		ifdata.each_pair { |a,b|
+			@log.debug("#{a} \t-\t#{b}")
+		}
+		return ifdata
 	end
 
 	def startArpCap(args = {})
@@ -141,8 +156,8 @@ class NCHPInterface
 	end
 	def checkPing(args={})
 	        ping = PacketFu::ICMPPacket.new(:icmp_type => 8, :icmp_code => 0, :body => "This is a ping and a finer ping there has never been 1234567")
-	        ping.ip_saddr=args[:src_ip]
-	        ping.eth_saddr=args[:src_mac]
+	        ping.ip_saddr=@ifcfg[:ip_saddr]
+	        ping.eth_saddr=@ifcfg[:eth_saddr]
 	        ping.ip_daddr=args[:dst_ip]
 	        ping.eth_daddr=args[:gw_mac]
 	        ping.recalc
@@ -235,12 +250,25 @@ $log.formatter = proc{ |level, datetime, progname, msg|
 options = doOpts()
 $log.level = options.debug ? Logger::DEBUG : Logger::INFO
 
-# OK let's test it!
-
+# OK let's build our interface object and let it listen for ARPs
+# Let's even show a nice spinny waiting thing while we do so (if we're not in debug mode)
 iface = NCHPInterface.new(:iface => options.tgtif, :log => $log, :maxarp => options.maxarp)
+spin = %w[| / - \\]
 while iface.checkArpCap < options.maxarp
-	sleep 1
+	unless options.debug 
+		iter = 0
+		print "Listening for ARPs on #{iface.name} - #{iface.arpcount} of #{options.maxarp} detected....."
+		12.times do
+			print spin[(iter += 1) % spin.length]
+			$stdout.flush
+			sleep 0.12
+			print "\b"
+			$stdout.flush
+		end
+		print "\r"
+	end
 end
+print "\n"
 
 # Just spit it all out for now so we can see what's up
 $log.debug("ARP DATABASE")
@@ -263,19 +291,8 @@ end
 
 # Take that address and/or determine what address we're going to use.
 # For now let's ask if we want to assign otherwise use our own address.
-case RUBY_PLATFORM
-when /freebsd/i
-	ifdata = BSDifconfig(options.tgtif)
-else
-	ifdata = PacketFu::Utils.ifconfig(options.tgtif)
-end
-$log.debug("Interface Data:")
-ifdata.each_pair { |a,b|
-	$log.debug("#{a} \t-\t#{b}")
-}
 
 # Check to see what I've seen ARP-ed for the most
-
 gwcand = iface.arptable.sort { |a,b| b[1][:sum] <=> a[1][:sum] }
 
 # In order from "most arp-ed for" to "least arp-ed for" try to find the default gateway
@@ -283,14 +300,14 @@ gwcand.each { |a|
 	$log.info("Trying #{a[0]}|#{a[1][:mac]} as a potential gateway....")
 	if(!a[1].has_key?(:mac))
 	   $log.info("Not in database - ARPing for #{a[0]}")
-	   haddr = PacketFu::Utils.arp(a[0], iface => ifdata[:iface])
+	   haddr = PacketFu::Utils.arp(a[0], :iface => iface.name)
 	   if haddr == nil
 		   $log.info("Failed.")
 		   next
 	   end
 	   iface.arptable[a[0]][:mac] = haddr
 	end
-	result = iface.checkPing(:src_ip => ifdata[:ip_saddr], :src_mac => ifdata[:eth_saddr], :dst_ip => '4.2.2.2', :gw_mac => iface.arptable[a[0]][:mac])
+	result = iface.checkPing(:dst_ip => '4.2.2.2', :gw_mac => iface.arptable[a[0]][:mac])
 	if result == true
 		$log.info("Success!")
 		# Set the default gateway
