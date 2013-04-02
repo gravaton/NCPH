@@ -7,14 +7,8 @@ require 'logger'
 require 'packetfu'
 require 'ipaddr'
 require 'SubnetBlob'
-require 'TestArp'
-require 'TestPing'
 
-# Setup our output logging
-$log = Logger.new(STDOUT)
-$log.formatter = proc{ |level, datetime, progname, msg|
-	return level.to_s + " -- " + msg.to_s + "\n"
-}
+
 class NCHPInterface
 	attr_reader :name, :cap, :arptable, :blob, :arpcount
 	def initialize(args = {})
@@ -46,12 +40,16 @@ class NCHPInterface
 				if(pkt.arp_daddr_ip != '0.0.0.0' and pkt.arp_opcode == 2)
 					@arptable[pkt.arp_daddr_ip][:mac] = pkt.arp_daddr_mac
 					@log.debug("Storing #{pkt.arp_daddr_ip}|#{pkt.arp_daddr_mac}")
+					@blob.addIP(pkt.arp_daddr_ip)
+					@log.debug("Blobbing #{pkt.arp_daddr_ip}")
 					# Count how many times we've seen this host searched for - default gateway should be the most sought after
 					@arptable[pkt.arp_daddr_ip][:sum] += 1
 				end
 				if(pkt.arp_saddr_ip != '0.0.0.0')
 					@arptable[pkt.arp_saddr_ip][:mac] = pkt.arp_saddr_mac
 					@log.debug("Storing #{pkt.arp_saddr_ip}|#{pkt.arp_saddr_mac}")
+					@blob.addIP(pkt.arp_saddr_ip)
+					@log.debug("Blobbing #{pkt.arp_saddr_ip}")
 				end
 				@arpcount = @arpcount + 1
 				@log.debug("Total number of captured packets: #{@arpcount}")
@@ -88,7 +86,7 @@ class NCHPInterface
 	
 	        arp = PacketFu::ARPPacket.new(:flavor => "Linux")
 	        arp.arp_opcode = 1
-	        rp.eth_daddr="ff:ff:ff:ff:ff:ff"
+	        arp.eth_daddr="ff:ff:ff:ff:ff:ff"
 	        arp.eth_saddr=ifconfig[:eth_saddr]
 	        arp.arp_saddr_ip="0.0.0.0"
 	        arp.arp_saddr_mac=ifconfig[:eth_saddr]
@@ -138,9 +136,39 @@ class NCHPInterface
 	        return false
 	end
 end
+
+# ifconfig stuff for BSD
+def BSDifconfig(iface='eth0')
+        ret = {}
+        iface = iface.to_s.scan(/[0-9A-Za-z]/).join # Sanitizing input, no spaces, semicolons, etc.
+        ifconfig_data = %x[ifconfig #{iface}]
+        if ifconfig_data =~ /#{iface}/
+                ifconfig_data = ifconfig_data.split(/[\s]*\n[\s]*/)
+        else
+                raise ArgumentError, "Cannot ifconfig #{iface}"
+        end
+        real_iface = ifconfig_data.first
+        ret[:iface] = real_iface.split.first.downcase.chomp(":")
+        ifconfig_data.each do |s|
+                case s
+                when /ether[\s]*([0-9a-fA-F:]{17})/
+                        ret[:eth_saddr] = $1.downcase
+                        ret[:eth_src] = PacketFu::EthHeader.mac2str(ret[:eth_saddr])
+                when /inet[\s]*([0-9]+\.[0-9]+\.[0-9]+\.[0-9]+)(.*netmask[\s]*(0x[0-9a-fA-F]{8}))?/
+                        ret[:ip_saddr] = $1
+                        ret[:ip_src] = [IPAddr.new($1).to_i].pack("N")
+                        ret[:ip4_obj] = IPAddr.new($1)
+                        ret[:ip4_obj] = ret[:ip4_obj].mask(($3.hex.to_s(2) =~ /0*$/)) if $3
+                when /inet6[\s]*([0-9a-fA-F:\x2f]+)/
+                        ret[:ip6_saddr] = $1
+                        ret[:ip6_obj] = IPAddr.new($1)
+                end
+        end
+        ret
+end
+
 # Parse the command line options
 def doOpts
-	# Parse passed-in command line switches
 	options = OpenStruct.new
 	optparse = OptionParser.new("Usage: NCPH.rb [options] [interface]") { |opts|
 		options.debug = false
@@ -171,6 +199,11 @@ def doOpts
 	options
 end
 
+# Setup our output logging
+$log = Logger.new(STDOUT)
+$log.formatter = proc{ |level, datetime, progname, msg|
+	return level.to_s + " -- " + msg.to_s + "\n"
+}
 
 options = doOpts()
 $log.level = options.debug ? Logger::DEBUG : Logger::INFO
@@ -181,7 +214,6 @@ iface = NCHPInterface.new(:iface => options.tgtif, :log => $log, :maxarp => opti
 while iface.checkArpCap < options.maxarp
 	sleep 1
 end
-print "Done!\n"
 
 # Just spit it all out for now so we can see what's up
 $log.debug("ARP DATABASE")
@@ -189,18 +221,12 @@ iface.arptable.each_pair { |key,value|
 	$log.debug("#{key}\t#{value[:mac]}\t#{value[:sum]}")
 }
 
-# Build a SubnetBlob out of the IPs we've found to actually exist
-$log.debug("Building subnet blob...")
-blob = SubnetBlob.new((iface.arptable.select { |k,v| v.has_key?(:mac) }).map { |i| i[0] })
-$log.debug("Blob contains #{blob.contents.join(' - ')}")
-$log.info("Local subnet appears to be #{blob}")
-
 # Pick in IP address for us
 newaddr = nil
 while newaddr == nil
-	newaddr = IPAddr.new(blob.net + rand(blob.mask), Socket::AF_INET)
+	newaddr = IPAddr.new(iface.blob.net + rand(iface.blob.mask), Socket::AF_INET)
 	$log.info("Testing #{newaddr}")
-	if(checkIP(:iface => options.tgtif, :target => newaddr.to_s))
+	if(iface.checkIP(:iface => options.tgtif, :target => newaddr.to_s))
 		$log.info("IP #{newaddr} is in use!  Trying again...")
 		newaddr = nil
 	else
@@ -237,7 +263,7 @@ gwcand.each { |a|
 	   end
 	   iface.arptable[a[0]][:mac] = haddr
 	end
-	result = checkPing(:iface => ifdata[:iface], :src_ip => ifdata[:ip_saddr], :src_mac => ifdata[:eth_saddr], :dst_ip => '4.2.2.2', :gw_mac => iface.arptable[a[0]][:mac])
+	result = iface.checkPing(:src_ip => ifdata[:ip_saddr], :src_mac => ifdata[:eth_saddr], :dst_ip => '4.2.2.2', :gw_mac => iface.arptable[a[0]][:mac])
 	if result == true
 		$log.info("Success!")
 		# Set the default gateway
@@ -245,4 +271,3 @@ gwcand.each { |a|
 	end
 	$log.info("Failed.")
 }
-
