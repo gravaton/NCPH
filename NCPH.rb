@@ -26,12 +26,17 @@ class SubnetBlob
                 #@carried = @carried.mask((32 - @mask.to_s(2).length))
                 @contents << item
         end
-        def addr
+	def getIP
+		newaddr = IPAddr.new(@net + rand(@mask), Socket::AF_INET)
+		return newaddr
+	end
+        def IPaddr
                 adr = IPAddr.new(self.to_s)
         end
         def to_s
-                out = [24, 16, 8, 0].collect {|b| (@net >> b) & 255}.join('.')
-                out = out + "/#{32 - @mask.to_s(2).length}"
+                adr = [24, 16, 8, 0].collect {|b| (@net >> b) & 255}.join('.')
+		msk = (32 - @mask.to_s(2).length).to_s
+		return IPAddr.new(adr + "/" + msk).to_s + "/" + msk
         end
 end
 
@@ -275,6 +280,9 @@ $log.debug("ARP DATABASE")
 iface.arptable.each_pair { |key,value|
 	$log.debug("#{key}\t#{value[:mac]}\t#{value[:sum]}")
 }
+
+# Print what the network looks like!
+$log.info("The network seems to be #{iface.blob}")
 
 # Pick in IP address for us
 newaddr = nil
