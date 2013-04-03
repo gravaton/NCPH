@@ -18,20 +18,18 @@ class SubnetBlob
                 }
         end
         def addIP(item)
-		$log.debug("Starting with #{@net} - #{@mask}")
 		item = IPAddr.new(item) unless item.kind_of?(IPAddr)
-                #adr = item.to_i
-                #adr = IPAddr.new(item)
 		@net = item if @net == nil
-                #@net = adr if @net == nil
                 @mask |= (@net.to_i ^ item.to_i)
                 @net = (@net & item).mask(32 - @mask.to_s(2).length)
-                #@carried = @carried.mask((32 - @mask.to_s(2).length))
                 @contents << item
-		$log.debug("Finishing with #{@net} - #{@mask}")
         end
 	def getIP
-		newaddr = IPAddr.new(@net + rand(@mask), Socket::AF_INET)
+		return nil if @net = nil
+		begin
+		newaddr = IPAddr.new(@net.to_i + rand(@mask), Socket::AF_INET)
+		end until not @contents.include?(newaddr)
+		@contents << newaddr
 		return newaddr
 	end
         def IPaddr
@@ -118,6 +116,22 @@ class NCHPInterface
 			@log.fatal("Serious error in the capture thread")
 			raise e
 		end
+	end
+
+	def getIP
+		newaddr = nil
+		while newaddr == nil
+			newaddr = @blob.getIP
+			#newaddr = IPAddr.new(iface.blob.net.to_i + rand(iface.blob.mask), Socket::AF_INET)
+			@log.info("Testing #{newaddr}")
+			if(self.checkIP(:target => newaddr.to_s))
+				@log.info("IP #{newaddr} is in use!  Trying again...")
+				newaddr = nil
+			else
+				@log.info("IP #{newaddr} unused!")
+			end
+		end
+		return newaddr
 	end
 
 	def checkIP(args={})
@@ -288,17 +302,7 @@ iface.arptable.each_pair { |key,value|
 $log.info("The network seems to be #{iface.blob}")
 
 # Pick in IP address for us
-newaddr = nil
-while newaddr == nil
-	newaddr = IPAddr.new(iface.blob.net.to_i + rand(iface.blob.mask), Socket::AF_INET)
-	$log.info("Testing #{newaddr}")
-	if(iface.checkIP(:iface => options.tgtif, :target => newaddr.to_s))
-		$log.info("IP #{newaddr} is in use!  Trying again...")
-		newaddr = nil
-	else
-		$log.info("IP #{newaddr} unused!")
-	end
-end
+newaddr = iface.getIP
 
 # Take that address and/or determine what address we're going to use.
 # For now let's ask if we want to assign otherwise use our own address.
