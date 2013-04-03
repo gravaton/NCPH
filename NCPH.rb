@@ -25,7 +25,7 @@ class SubnetBlob
                 @contents << item
         end
 	def getIP
-		return nil if @net = nil
+		return nil if @net == nil
 		begin
 		newaddr = IPAddr.new(@net.to_i + rand(@mask), Socket::AF_INET)
 		end until not @contents.include?(newaddr)
