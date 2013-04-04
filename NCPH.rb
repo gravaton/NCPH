@@ -53,7 +53,6 @@ class NCHPInterface
 		@ifcfg = self.getIfcfg
 		self.startArpCap(:maxarp => args[:maxarp])
 	end
-
 	def getIfcfg
 		case RUBY_PLATFORM
 		when /freebsd/i
@@ -67,7 +66,6 @@ class NCHPInterface
 		}
 		return ifdata
 	end
-
 	def startArpCap(args = {})
 		@cap_thread = Thread.new {
 			@log.debug("ARP capture thread starting up on #{@name}")
@@ -108,7 +106,6 @@ class NCHPInterface
 			@arpcount
 		}
 	end
-
 	def checkArpCap
 		begin
 			return (@cap_thread.alive? ? @arpcount : @cap_thread.value)
@@ -117,7 +114,6 @@ class NCHPInterface
 			raise e
 		end
 	end
-
 	def getIP
 		newaddr = nil
 		while newaddr == nil
@@ -133,7 +129,6 @@ class NCHPInterface
 		end
 		return newaddr
 	end
-
 	def checkIP(args={})
         	# Get our interface information
 	        # We have to use our own function for this here because packetfu doesn't support FreeBSD
@@ -236,13 +231,19 @@ def doOpts
 	options = OpenStruct.new
 	optparse = OptionParser.new("Usage: NCPH.rb [options] [interface]") { |opts|
 		options.debug = false
+		options.findip = false
+		options.setip = false
+		options.gateway = false
 		options.maxarp = 15
 		opts.separator ""
 		opts.on( "-aCOUNT", "--arpcount COUNT", Integer, "Number of ARP packets to capture before processing") { |count|
 			options.maxarp = count
 		}
-		opts.on( "-d", "--debug", "Output debug information") { options.debug = true }
+		opts.on( "-f", "--findip", "Choose a random IP from the discovered subnet") { options.findip = true }
+		opts.on( "-s", "--setip", "Directly set the interface's IP") { options.setip = true }
+		opts.on( "-g", "--gateway", "Perform the gateway test on seen IPs") { options.gateway = true }
 		opts.separator ""
+		opts.on( "-d", "--debug", "Output debug information") { options.debug = true }
 		opts.on_tail( "-h", "--help", "Display this screen") {
 			puts opts
 			exit
@@ -302,31 +303,36 @@ iface.arptable.each_pair { |key,value|
 $log.info("The network seems to be #{iface.blob}")
 
 # Pick in IP address for us
-newaddr = iface.getIP
+newaddr = iface.getIP if options.findip
 
 # Take that address and/or determine what address we're going to use.
 # For now let's ask if we want to assign otherwise use our own address.
+if(options.setip)
+	$log.info("SetIP action here")
+end
 
 # Check to see what I've seen ARP-ed for the most
-gwcand = iface.arptable.sort { |a,b| b[1][:sum] <=> a[1][:sum] }
+if(options.gateway)
+	gwcand = iface.arptable.sort { |a,b| b[1][:sum] <=> a[1][:sum] }
 
-# In order from "most arp-ed for" to "least arp-ed for" try to find the default gateway
-gwcand.each { |a|
-	$log.info("Trying #{a[0]}|#{a[1][:mac]} as a potential gateway....")
-	if(!a[1].has_key?(:mac))
-	   $log.info("Not in database - ARPing for #{a[0]}")
-	   haddr = PacketFu::Utils.arp(a[0], :iface => iface.name)
-	   if haddr == nil
-		   $log.info("Failed.")
-		   next
-	   end
-	   iface.arptable[a[0]][:mac] = haddr
-	end
-	result = iface.checkPing(:dst_ip => '4.2.2.2', :gw_mac => iface.arptable[a[0]][:mac])
-	if result == true
-		$log.info("Success!")
-		# Set the default gateway
-		break
-	end
-	$log.info("Failed.")
-}
+	# In order from "most arp-ed for" to "least arp-ed for" try to find the default gateway
+	gwcand.each { |a|
+		$log.info("Trying #{a[0]}|#{a[1][:mac]} as a potential gateway....")
+		if(!a[1].has_key?(:mac))
+		   $log.info("Not in database - ARPing for #{a[0]}")
+		   haddr = PacketFu::Utils.arp(a[0], :iface => iface.name)
+		   if haddr == nil
+			   $log.info("Failed.")
+			   next
+		   end
+		   iface.arptable[a[0]][:mac] = haddr
+		end
+		result = iface.checkPing(:dst_ip => '4.2.2.2', :gw_mac => iface.arptable[a[0]][:mac])
+		if result == true
+			$log.info("Success!")
+			# Set the default gateway
+			break
+		end
+		$log.info("Failed.")
+	}
+end
