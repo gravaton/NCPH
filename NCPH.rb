@@ -192,8 +192,10 @@ class NCHPInterface
 			mask = @blob.net.inspect.match('.+\/([0-9\.]+)>')[1]
 			cstring = "ifconfig #{name} #{ip} netmask #{mask}"
 			@log.info("Exec: #{cstring}")
-			return system(cstring)
+			retval = system(cstring)
 		end
+		@ifcfg = self.getIfcfg
+		return retval
 	end
 	def checkPing(args={})
 	        ping = PacketFu::ICMPPacket.new(:icmp_type => 8, :icmp_code => 0, :body => "This is a ping and a finer ping there has never been 1234567")
