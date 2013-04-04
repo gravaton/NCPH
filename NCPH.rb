@@ -32,9 +32,6 @@ class SubnetBlob
 		@contents << newaddr
 		return newaddr
 	end
-        def IPaddr
-                adr = IPAddr.new(self.to_s)
-        end
         def to_s
 		return "" if @net == nil
 		return @net.to_s + "/" + (32 - @mask.to_s(2).length).to_s
@@ -190,8 +187,12 @@ class NCHPInterface
 	def setIP(args={})
 		#This should to the IP setting on the interface fepending on platform
 		case RUBY_PLATFORM
-		when /freebsd/i
-			#We're using FreeBSD
+		when /freebsd/i , /linux/i
+			ip = args[:ip].to_s
+			mask = @blob.net.inspect.match('.+\/([0-9\.]+)>')[1]
+			cstring = "ifconfig #{name} #{ip} netmask #{mask}"
+			@log.info("Exec: #{cstring}")
+			return system(cstring)
 		end
 	end
 	def checkPing(args={})
@@ -328,9 +329,8 @@ $log.info("The network seems to be #{iface.blob}")
 # Pick in IP address for us
 newaddr = iface.getIP if options.findip
 
-# Take that address and/or determine what address we're going to use.
-# For now let's ask if we want to assign otherwise use our own address.
-$log.info("SetIP action here") if options.setip
+# Set our IP if the flag was set
+iface.setIP(:ip => newaddr) if options.setip
 
 # Check to see what I've seen ARP-ed for the most
 gw = iface.getGW if options.gateway
