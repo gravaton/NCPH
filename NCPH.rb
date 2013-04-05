@@ -14,7 +14,7 @@ class SubnetBlob
                 @net = nil
                 @contents = []
                 adrlist.each { |item|
-                        self.addIP(item)
+                        addIP(item)
                 }
         end
         def addIP(item)
@@ -47,9 +47,83 @@ class NCHPInterface
 		@blob = SubnetBlob.new
 		@log = args[:log]
 		@cap = PacketFu::Capture.new(:iface => @name)
-		@ifcfg = self.getIfcfg
-		self.startArpCap(:maxarp => args[:maxarp])
+		@ifcfg = getIfcfg()
+		startArpCap(:maxarp => args[:maxarp])
 	end
+	def checkArpCap
+		begin
+			return (@cap_thread.alive? ? @arpcount : @cap_thread.value)
+		rescue => e
+			@log.fatal("Serious error in the capture thread")
+			raise e
+		end
+	end
+	def getIP
+		newaddr = nil
+		while newaddr == nil
+			newaddr = @blob.getIP
+			#newaddr = IPAddr.new(iface.blob.net.to_i + rand(iface.blob.mask), Socket::AF_INET)
+			@log.info("Testing #{newaddr}")
+			if(checkIP(:target => newaddr.to_s))
+				@log.info("IP #{newaddr} is in use!  Trying again...")
+				newaddr = nil
+			else
+				@log.info("IP #{newaddr} unused!")
+			end
+		end
+		return newaddr
+	end
+	def setIP(args={})
+		#This should to the IP setting on the interface fepending on platform
+		case RUBY_PLATFORM
+		when /freebsd/i , /linux/i
+			ip = args[:ip].to_s
+			mask = @blob.net.inspect.match('.+\/([0-9\.]+)>')[1]
+			cstring = "ifconfig #{name} #{ip} netmask #{mask}"
+			@log.info("Exec: #{cstring}")
+			retval = system(cstring)
+		end
+		@ifcfg = getIfcfg()
+		return retval
+	end
+	def getGW
+		gwcand = @arptable.sort { |a,b| b[1][:sum] <=> a[1][:sum] }
+		# In order from "most arp-ed for" to "least arp-ed for" try to find the default gateway
+		gwcand.each { |a|
+			@log.info("Trying #{a[0]}|#{a[1][:mac]} as a potential gateway....")
+			if(!a[1].has_key?(:mac))
+			   @log.info("Not in database - ARPing for #{a[0]}")
+			   haddr = PacketFu::Utils.arp(a[0], :iface => @name)
+			   if haddr == nil
+				   @log.info("Failed.")
+				   next
+			   end
+			   iface.arptable[a[0]][:mac] = haddr
+			end
+			result = checkPing(:dst_ip => '4.2.2.2', :gw_mac => @arptable[a[0]][:mac])
+			if result == true
+				@log.info("Success!")
+				return a[0]
+			end
+			@log.info("Failed.")
+		}
+		return nil
+	end
+	def setGW(args={})
+		@log.debug("SetGW called, #{args[:ip]}")
+		if args[:ip] == nil
+			print "It's nil\n"
+			return
+		end
+		case RUBY_PLATFORM
+		when /freebsd/i, /linux/i
+			cstring = "route add default gw #{args[:ip]}"
+			@log.info("Exec: #{cstring}")
+			retval = system(cstring)
+		end
+		return retval
+	end
+	private
 	def getIfcfg
 		case RUBY_PLATFORM
 		when /freebsd/i
@@ -103,66 +177,6 @@ class NCHPInterface
 			@arpcount
 		}
 	end
-	def checkArpCap
-		begin
-			return (@cap_thread.alive? ? @arpcount : @cap_thread.value)
-		rescue => e
-			@log.fatal("Serious error in the capture thread")
-			raise e
-		end
-	end
-	def getIP
-		newaddr = nil
-		while newaddr == nil
-			newaddr = @blob.getIP
-			#newaddr = IPAddr.new(iface.blob.net.to_i + rand(iface.blob.mask), Socket::AF_INET)
-			@log.info("Testing #{newaddr}")
-			if(self.checkIP(:target => newaddr.to_s))
-				@log.info("IP #{newaddr} is in use!  Trying again...")
-				newaddr = nil
-			else
-				@log.info("IP #{newaddr} unused!")
-			end
-		end
-		return newaddr
-	end
-	def getGW
-		gwcand = @arptable.sort { |a,b| b[1][:sum] <=> a[1][:sum] }
-		# In order from "most arp-ed for" to "least arp-ed for" try to find the default gateway
-		gwcand.each { |a|
-			@log.info("Trying #{a[0]}|#{a[1][:mac]} as a potential gateway....")
-			if(!a[1].has_key?(:mac))
-			   @log.info("Not in database - ARPing for #{a[0]}")
-			   haddr = PacketFu::Utils.arp(a[0], :iface => @name)
-			   if haddr == nil
-				   @log.info("Failed.")
-				   next
-			   end
-			   iface.arptable[a[0]][:mac] = haddr
-			end
-			result = self.checkPing(:dst_ip => '4.2.2.2', :gw_mac => @arptable[a[0]][:mac])
-			if result == true
-				@log.info("Success!")
-				return a[0]
-			end
-			@log.info("Failed.")
-		}
-		return nil
-	end
-	def setGW(args={})
-		@log.debug("SetGW called, #{args[:ip]}")
-		if args[:ip] == nil
-			print "It's nil\n"
-			return
-		end
-		case RUBY_PLATFORM
-		when /freebsd/i, /linux/i
-			cstring = "route add default gw #{args[:ip]}"
-			@log.info("Exec: #{cstring}")
-			retval = system(cstring)
-		end
-		return retval
-	end
 	def checkIP(args={})
         	# Get our interface information
 	        # We have to use our own function for this here because packetfu doesn't support FreeBSD
@@ -197,19 +211,6 @@ class NCHPInterface
 	        }
 		@cap.clear(:array => true, :stream => true)
         	return false
-	end
-	def setIP(args={})
-		#This should to the IP setting on the interface fepending on platform
-		case RUBY_PLATFORM
-		when /freebsd/i , /linux/i
-			ip = args[:ip].to_s
-			mask = @blob.net.inspect.match('.+\/([0-9\.]+)>')[1]
-			cstring = "ifconfig #{name} #{ip} netmask #{mask}"
-			@log.info("Exec: #{cstring}")
-			retval = system(cstring)
-		end
-		@ifcfg = self.getIfcfg
-		return retval
 	end
 	def checkPing(args={})
 	        ping = PacketFu::ICMPPacket.new(:icmp_type => 8, :icmp_code => 0, :body => "This is a ping and a finer ping there has never been 1234567")
