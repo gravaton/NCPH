@@ -155,7 +155,9 @@ class NCHPInterface
 		when /freebsd/i
 		when /linux/i
 			cstring = "route add default gw #{args[:ip]}"
-			retval = system(cstring)
+			@log.debug("Exec: #{cstring}")
+			#retval = system(cstring)
+			retval = nil
 		end
 		return retval
 	end
@@ -202,7 +204,8 @@ class NCHPInterface
 			mask = @blob.net.inspect.match('.+\/([0-9\.]+)>')[1]
 			cstring = "ifconfig #{name} #{ip} netmask #{mask}"
 			@log.info("Exec: #{cstring}")
-			retval = system(cstring)
+			#retval = system(cstring)
+			retval = nil
 		end
 		@ifcfg = self.getIfcfg
 		return retval
