@@ -149,6 +149,16 @@ class NCHPInterface
 		}
 		return nil
 	end
+	def setGW(args={})
+		return if args[:ip] == nil
+		case RUBY_PLATFORM
+		when /freebsd/i
+		when /linux/i
+			cstring = "route add default gw #{args[:ip]}"
+			retval = system(cstring)
+		end
+		return retval
+	end
 	def checkIP(args={})
         	# Get our interface information
 	        # We have to use our own function for this here because packetfu doesn't support FreeBSD
@@ -335,4 +345,4 @@ newaddr = iface.getIP if options.findip
 iface.setIP(:ip => newaddr) if options.setip
 
 # Check to see what I've seen ARP-ed for the most
-gw = iface.getGW if options.gateway
+iface.setGW(:ip => iface.getGW) if options.gateway
