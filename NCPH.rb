@@ -150,10 +150,13 @@ class NCHPInterface
 		return nil
 	end
 	def setGW(args={})
-		return if args[:ip] == nil
+		@log.debug("SetGW called, #{args[:ip]}")
+		if args[:ip] == nil
+			print "It's nil\n"
+			return
+		end
 		case RUBY_PLATFORM
-		when /freebsd/i
-		when /linux/i
+		when /freebsd/i, /linux/i
 			cstring = "route add default gw #{args[:ip]}"
 			@log.debug("Exec: #{cstring}")
 			#retval = system(cstring)
