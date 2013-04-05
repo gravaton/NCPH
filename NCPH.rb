@@ -158,7 +158,7 @@ class NCHPInterface
 		case RUBY_PLATFORM
 		when /freebsd/i, /linux/i
 			cstring = "route add default gw #{args[:ip]}"
-			@log.debug("Exec: #{cstring}")
+			@log.info("Exec: #{cstring}")
 			#retval = system(cstring)
 			retval = nil
 		end
