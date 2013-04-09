@@ -86,7 +86,8 @@ class NCHPInterface
 		@ifcfg = getIfcfg()
 		return retval
 	end
-	def getGW
+	def getGW(args={})
+		target = IPAddr.new(args[:target])
 		gwcand = @arptable.sort { |a,b| b[1][:sum] <=> a[1][:sum] }
 		# In order from "most arp-ed for" to "least arp-ed for" try to find the default gateway
 		gwcand.each { |a|
@@ -100,7 +101,7 @@ class NCHPInterface
 			   end
 			   iface.arptable[a[0]][:mac] = haddr
 			end
-			result = checkPing(:dst_ip => '4.2.2.2', :gw_mac => @arptable[a[0]][:mac])
+			result = checkPing(:dst_ip => target, :gw_mac => @arptable[a[0]][:mac])
 			if result == true
 				@log.info("Success!")
 				return a[0]
@@ -216,11 +217,11 @@ class NCHPInterface
 	        ping = PacketFu::ICMPPacket.new(:icmp_type => 8, :icmp_code => 0, :body => "This is a ping and a finer ping there has never been 1234567")
 	        ping.ip_saddr=@ifcfg[:ip_saddr]
 	        ping.eth_saddr=@ifcfg[:eth_saddr]
-	        ping.ip_daddr=args[:dst_ip]
+	        ping.ip_daddr=args[:dst_ip].to_s
 	        ping.eth_daddr=args[:gw_mac]
 	        ping.recalc
 
-	        fstring = "icmp[icmptype] = icmp-echoreply and src host " + args[:dst_ip]
+	        fstring = "icmp[icmptype] = icmp-echoreply and src host " + args[:dst_ip].to_s
 	        @cap.capture(:filter => fstring)
 	        3.times do ping.to_w(@name) end
 	        sleep 5
@@ -275,6 +276,8 @@ def doOpts
 		options.findip = false
 		options.setip = false
 		options.gateway = false
+		options.targetip = "8.8.8.8"
+		options.setroute = false
 		options.maxarp = 15
 		opts.separator ""
 		opts.on( "-aCOUNT", "--arpcount COUNT", Integer, "Number of ARP packets to capture before processing") { |count|
@@ -283,6 +286,10 @@ def doOpts
 		opts.on( "-f", "--findip", "Choose a random IP from the discovered subnet") { options.findip = true }
 		opts.on( "-s", "--setip", "Directly set the interface's IP") { options.setip = true }
 		opts.on( "-g", "--gateway", "Perform the gateway test on seen IPs") { options.gateway = true }
+		opts.on( "-t", "--test IPADDR", "Specify the destination IP the gateway should be able to route traffic to") { |ipaddr|
+			options.targetip = ipaddr
+		}
+		opts.on( "-r", "--route", "Add a default route pointing to any found gateway") { options.setroute = true }
 		opts.separator ""
 		opts.on( "-d", "--debug", "Output debug information") { options.debug = true }
 		opts.on_tail( "-h", "--help", "Display this screen") {
@@ -350,4 +357,7 @@ newaddr = iface.getIP if options.findip
 iface.setIP(:ip => newaddr) if options.setip
 
 # Check to see what I've seen ARP-ed for the most
-iface.setGW(:ip => iface.getGW) if options.gateway
+gw = iface.getGW(:target => options.targetip) if options.gateway
+
+# And set a default route there
+iface.setGW(:ip => gw) if options.route
